@@ -37,4 +37,5 @@ SafeHer is a mobile application built to enhance women's safety by enabling them
 
 # **Team Members:**
 
-    ![Team](https://github.com/user-attachments/assets/f205d91b-3d2f-47ed-94e7-cee79c37d8b9)
+![Team](https://github.com/user-attachments/assets/39d3d15f-3133-4107-b855-f9d3385c06e2)
+
