@@ -27,7 +27,7 @@ SafeHer is a mobile application built to enhance women's safety by enabling them
 - **MongoDB** – for backend user data & contact syncing
 
 # **Initital workflow of the App**
-<img width="458" height="1432" alt="WorkFlow" src="![Workflow](https://github.com/user-attachments/assets/644bf4c5-e0c9-4624-8ce0-ebdddb1c4dee)
+<img width="458" height="1432" alt="WorkFlow" src="[Workflow](https://github.com/user-attachments/assets/644bf4c5-e0c9-4624-8ce0-ebdddb1c4dee)
 " />
 
 
