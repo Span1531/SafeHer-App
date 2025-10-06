@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { DeviceMotion } from 'expo-sensors';
 import { Platform } from 'react-native';
 
-const SHAKE_THRESHOLD = 3.5; // Acceleration threshold for shake detection
+// 💥 UPDATED THRESHOLD: Only trigger a detection when acceleration exceeds 15 G's.
+const SHAKE_THRESHOLD = 40.0; 
 const SHAKE_TIMEOUT = 1000; // Debounce time in ms
 
 let lastShakeTime = 0;
@@ -35,15 +36,17 @@ export const useShakeDetection = (onShake: () => void) => {
 
         // Subscribe to device motion
         subscription = DeviceMotion.addListener((motionData) => {
-          const { acceleration } = motionData;
+          // Use accelerationIncludingGravity for more stable magnitude calculation,
+          // but fall back to acceleration if necessary.
+          const accelerationData = motionData.accelerationIncludingGravity || motionData.acceleration;
           
-          if (!acceleration) return;
+          if (!accelerationData) return;
 
           // Calculate total acceleration magnitude
           const totalAcceleration = Math.sqrt(
-            Math.pow(acceleration.x || 0, 2) +
-            Math.pow(acceleration.y || 0, 2) +
-            Math.pow(acceleration.z || 0, 2)
+            Math.pow(accelerationData.x || 0, 2) +
+            Math.pow(accelerationData.y || 0, 2) +
+            Math.pow(accelerationData.z || 0, 2)
           );
 
           // Check if shake threshold exceeded

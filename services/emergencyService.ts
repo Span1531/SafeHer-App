@@ -126,15 +126,20 @@ export const sendEmergencyAlert = async (): Promise<EmergencyResult> => {
     
     console.log('SMS Composer Result:', result);
 
-    // FIX: Relaxed success criteria for Expo Go
-    if (result === SMS.SMSResult.SENT || result === SMS.SMSResult.COMPOSED) {
+    // 💥 FIX: Accessing SMSResult via bracket notation is safer in Expo Go to avoid crashing.
+    const SMS_SENT = SMS.SMSResult ? SMS.SMSResult.SENT : 'sent';
+    const SMS_COMPOSED = SMS.SMSResult ? SMS.SMSResult.COMPOSED : 'composed';
+    const SMS_CANCELLED = SMS.SMSResult ? SMS.SMSResult.CANCELLED : 'cancelled';
+
+
+    if (result === SMS_SENT || result === SMS_COMPOSED) {
       console.log('✅ Emergency SMS composer opened/sent successfully!');
       // Assuming success if the user pressed send or composed the message
       return {
         success: true,
         sentTo: phoneNumbers.length,
       };
-    } else if (result === SMS.SMSResult.CANCELLED) {
+    } else if (result === SMS_CANCELLED) {
       console.log('⚠️ SMS sending was cancelled by user');
       return {
         success: false,
@@ -177,10 +182,12 @@ class EmergencyService {
       if (!isAvailable) {
         return { success: false };
       }
+      
+      const SMS_CANCELLED = SMS.SMSResult ? SMS.SMSResult.CANCELLED : 'cancelled';
 
       const { result } = await SMS.sendSMSAsync(phoneNumbers, message);
       // Relaxed check for compatibility
-      return { success: result !== SMS.SMSResult.CANCELLED };
+      return { success: result !== SMS_CANCELLED };
     } catch (error) {
       console.error('SMS error:', error);
       return { success: false };
