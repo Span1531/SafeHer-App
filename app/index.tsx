@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { authService } from '@/services/authService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Shield } from 'lucide-react-native';
+import { shakeService } from "@/services/shakeService";
 
 export default function Index() {
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function Index() {
       if (isAuthenticated) {
         console.log('→ Authenticated, going to tabs');
         router.replace('/(tabs)');
+        await shakeService.start();
       } else {
         console.log('→ Not authenticated, showing login');
         router.replace('/auth/login');

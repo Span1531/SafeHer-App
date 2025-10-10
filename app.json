@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "bolt-expo-nativewind",
+    "name": "Safe-Her",
     "slug": "bolt-expo-nativewind",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -31,7 +31,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "a3b4afda-5930-49ce-919c-1adb9993ab1d"
+        "projectId": "8c6ec1ef-ad79-441f-8093-23e88912eb4c"
       }
     }
   }
