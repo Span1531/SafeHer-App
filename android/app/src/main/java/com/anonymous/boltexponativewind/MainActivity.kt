@@ -1,4 +1,4 @@
-package com.safeher.app
+package com.anonymous.boltexponativewind
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

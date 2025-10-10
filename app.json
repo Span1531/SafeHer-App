@@ -1,34 +1,21 @@
 {
   "expo": {
-    "name": "SafeHer",
-    "slug": "safeher",
+    "name": "bolt-expo-nativewind",
+    "slug": "bolt-expo-nativewind",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "safeher",
+    "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.safeher.app"
-    },
-    "android": {
-      "package": "com.safeher.app",
-      "permissions": [
-        "SEND_SMS",
-        "READ_SMS",
-        "RECEIVE_SMS",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "INTERNET",
-        "WAKE_LOCK",
-        "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
-      ]
+      "bundleIdentifier": "com.anonymous.boltexponativewind"
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",
@@ -38,10 +25,13 @@
     "experiments": {
       "typedRoutes": true
     },
+    "android": {
+      "package": "com.anonymous.boltexponativewind"
+    },
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "c46cab86-ae42-43e3-a369-a8cc43e3835e"
+        "projectId": "a3b4afda-5930-49ce-919c-1adb9993ab1d"
       }
     }
   }

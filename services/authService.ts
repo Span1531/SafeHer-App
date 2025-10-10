@@ -1,7 +1,7 @@
 // services/authService.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_URL = "https://safeher-backend-1.onrender.com/api/auth"; //599293  569760
+const API_URL = "https://safeher-backend-1.onrender.com:5000/api/auth";
 
 export const authService = {
   sendOTP: async (phoneNo: string) => {
