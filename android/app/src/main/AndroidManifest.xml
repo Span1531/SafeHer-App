@@ -1,37 +1,164 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  
+  <!-- ============================================================
+       LOCATION PERMISSIONS
+       ============================================================ -->
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-  <uses-permission android:name="android.permission.CAMERA"/>
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+  
+  <!-- ============================================================
+       FOREGROUND SERVICE PERMISSIONS
+       ============================================================ -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+  
+  <!-- ============================================================
+       OTHER PERMISSIONS
+       ============================================================ -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.SEND_SMS"/>
+  <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
   <uses-permission android:name="android.permission.INTERNET"/>
-  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-  <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
-  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-  <queries>
-    <intent>
-      <action android:name="android.intent.action.VIEW"/>
-      <category android:name="android.intent.category.BROWSABLE"/>
-      <data android:scheme="https"/>
-    </intent>
-  </queries>
-  <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:enableOnBackInvokedCallback="false">
-    <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
-    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
-    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
+  
+  <!-- ============================================================
+       NEW: PERSISTENCE PERMISSIONS (For Background Survival)
+       ============================================================ -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+  
+  <application
+    android:name=".MainApplication"
+    android:label="@string/app_name"
+    android:icon="@mipmap/ic_launcher"
+    android:allowBackup="true"
+    android:theme="@style/AppTheme"
+    android:usesCleartextTraffic="true">
+    
+    <!-- ============================================================
+         MAIN ACTIVITY
+         ============================================================ -->
+    <activity
+      android:name=".MainActivity"
+      android:label="@string/app_name"
+      android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
+      android:launchMode="singleTask"
+      android:windowSoftInputMode="adjustResize"
+      android:exported="true">
+      
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
+      
       <intent-filter>
-        <action android:name="android.intent.action.VIEW"/>
+        <action android:name="com.anonymous.boltexponativewind.EMERGENCY_TRIGGER"/>
         <category android:name="android.intent.category.DEFAULT"/>
-        <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="myapp"/>
       </intent-filter>
     </activity>
+    
+    <!-- ============================================================
+         SHAKE DETECTION SERVICE
+         IMPORTANT: stopWithTask="false" keeps service alive when app closes
+         ============================================================ -->
+    <service
+      android:name=".ShakeService"
+      android:enabled="true"
+      android:exported="false"
+      android:foregroundServiceType="location"
+      android:stopWithTask="false"/>
+    
+    <!-- ============================================================
+         BROADCAST RECEIVERS (EXISTING)
+         ============================================================ -->
+    <receiver
+      android:name=".ShakeBroadcastReceiver"
+      android:enabled="true"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="com.anonymous.boltexponativewind.SHAKE_DETECTED"/>
+      </intent-filter>
+    </receiver>
+    
+    <receiver
+      android:name=".EmergencyActionReceiver"
+      android:enabled="true"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="ACTION_SEND_EMERGENCY"/>
+        <action android:name="ACTION_CANCEL_EMERGENCY"/>
+      </intent-filter>
+    </receiver>
+    
+    <!-- ============================================================
+         NEW: BOOT RECEIVER (Starts service on device boot)
+         ============================================================ -->
+    <receiver
+      android:name=".BootReceiver"
+      android:enabled="true"
+      android:exported="true"
+      android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
+    </receiver>
+    
+    <!-- ============================================================
+         NEW: SERVICE RESTART RECEIVER (Restarts service if killed)
+         ============================================================ -->
+    <receiver
+      android:name=".ServiceRestartReceiver"
+      android:enabled="true"
+      android:exported="false"/>
+    
+    <!-- ============================================================
+         HEADLESS TASK SERVICE (For background JS execution)
+         ============================================================ -->
+    <service
+      android:name=".ShakeHeadlessTaskService"
+      android:enabled="true"
+      android:exported="false"/>
+
+    <!-- Emergency Alert Service (for sending SMS from background) -->
+<service
+    android:name=".EmergencyAlertService"
+    android:enabled="true"
+    android:exported="false"/>
+
+    <receiver
+    android:name=".NotificationActionReceiver"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="com.anonymous.boltexponativewind.ACTION_SEND_EMERGENCY" />
+        <action android:name="com.anonymous.boltexponativewind.ACTION_CANCEL_EMERGENCY" />
+    </intent-filter>
+</receiver>
+
+<receiver
+    android:name=".NotificationActionReceiver"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="com.anonymous.boltexponativewind.ACTION_SEND_EMERGENCY" />
+        <action android:name="com.anonymous.boltexponativewind.ACTION_CANCEL_EMERGENCY" />
+    </intent-filter>
+</receiver>
+
+<service
+    android:name=".EmergencyDispatchService"
+    android:exported="false"
+    android:foregroundServiceType="dataSync|connectedDevice|location|shortService" />
+
+
+    
   </application>
+
 </manifest>

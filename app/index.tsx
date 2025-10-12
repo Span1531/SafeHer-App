@@ -1,78 +1,118 @@
-// app/index.tsx
-// FIXED VERSION - Properly checks onboarding completion
-
-import { useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, StyleSheet, ActivityIndicator, Platform, DeviceEventEmitter, ToastAndroid, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { authService } from '@/services/authService';
+import { emergencyService } from '@/services/emergencyService';
+import { initDB } from '@/services/sqliteService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Shield } from 'lucide-react-native';
-import { shakeService } from "@/services/shakeService";
 
 export default function Index() {
+  const [isReady, setIsReady] = useState(false);
+
   useEffect(() => {
+    // Initialize SQLite database
+    initDB().catch(err => console.error('Failed to init DB:', err));
+
+    // Setup event listeners
+    const smsSubscription = DeviceEventEmitter.addListener('onEmergencyConfirmed', handleEmergencySmsDispatch);
+    const warningSubscription = setupForegroundShakeListener();
+
+    // Initialize app
     initializeApp();
+
+    return () => {
+      smsSubscription.remove();
+      warningSubscription();
+    };
   }, []);
+
+  const handleEmergencySmsDispatch = async () => {
+    console.log('🚨 EVENT RECEIVED: User confirmed SOS from notification! Sending SMS...');
+    
+    const result = await emergencyService.sendEmergencyAlert();
+    
+    if (result.success) {
+      Alert.alert(
+        '✅ Alert Sent',
+        `Emergency alert sent to ${result.sentTo} contacts!`,
+        [{ text: 'OK' }]
+      );
+    } else {
+      Alert.alert(
+        '❌ Alert Failed',
+        result.error || 'Failed to send emergency alert.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const setupForegroundShakeListener = () => {
+    if (Platform.OS === 'android') {
+      const warningSubscription = DeviceEventEmitter.addListener('onShakeWarning', () => {
+        ToastAndroid.show('Shake Detected! Confirm action in notification bar.', ToastAndroid.LONG);
+      });
+      return () => warningSubscription.remove();
+    }
+    return () => {};
+  };
 
   const initializeApp = async () => {
     try {
       console.log('🚀 Initializing app...');
       
-      // Check if onboarding is complete
       const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
       const hasLaunched = await AsyncStorage.getItem('hasLaunched');
       
-      console.log('App state:', { onboardingComplete, hasLaunched });
-
-      // First time user - show onboarding
       if (hasLaunched === null) {
-        console.log('→ First launch, showing onboarding');
         await AsyncStorage.setItem('hasLaunched', 'true');
         router.replace('/auth/onboarding');
         return;
       }
 
-      // Check if user completed onboarding
+      const isAuthenticated = await authService.isAuthenticated();
+      
       if (onboardingComplete !== 'true') {
-        console.log('→ Onboarding not complete, checking auth...');
-        
-        // Check if authenticated
-        const isAuthenticated = await authService.isAuthenticated();
-        
         if (isAuthenticated) {
-          console.log('→ Authenticated but no permissions, showing permissions screen');
           router.replace('/auth/permissions');
         } else {
-          console.log('→ Not authenticated, showing login');
           router.replace('/auth/login');
         }
         return;
       }
 
-      // Onboarding complete - check authentication
-      console.log('→ Onboarding complete, checking auth...');
-      const isAuthenticated = await authService.isAuthenticated();
-      
       if (isAuthenticated) {
-        console.log('→ Authenticated, going to tabs');
+        const ignoringBattery = await emergencyService.checkBatteryOptimization();
+        if (!ignoringBattery) {
+          Alert.alert(
+            "Important: Background Running",
+            "Please disable battery optimization for SafeHer to ensure emergency detection works when the app is closed.",
+            [{ text: 'Open Settings', onPress: () => emergencyService.requestBatteryOptimizationExemption() }]
+          );
+        }
+        
         router.replace('/(tabs)');
-        await shakeService.start();
       } else {
-        console.log('→ Not authenticated, showing login');
         router.replace('/auth/login');
       }
     } catch (error) {
       console.error('❌ App initialization error:', error);
       router.replace('/auth/login');
+    } finally {
+      setIsReady(true);
     }
   };
 
-  return (
-    <View style={styles.container}>
-      <Shield size={64} color="#DC2626" />
-      <ActivityIndicator size="large" color="#DC2626" style={styles.loader} />
-    </View>
-  );
+  if (!isReady) {
+    return (
+      <View style={styles.container}>
+        <Shield size={64} color="#DC2626" />
+        <ActivityIndicator size="large" color="#DC2626" style={styles.loader} />
+      </View>
+    );
+  }
+  
+  return null;
 }
 
 const styles = StyleSheet.create({
