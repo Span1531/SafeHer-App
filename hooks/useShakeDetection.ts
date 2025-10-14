@@ -19,7 +19,7 @@ export const useShakeDetection = () => {
 
       // Cleanup function to stop the service when the component unmounts (optional, but good practice)
       return () => {
-        emergencyService.stopBackgroundShakeDetection();
+        
         console.log('🛑 Native ShakeService stopped on component unmount.');
       };
     }

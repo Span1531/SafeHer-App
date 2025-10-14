@@ -53,7 +53,7 @@ if (Platform.OS === 'android') {
     console.log('============================');
 }
 
-// Add this RIGHT AFTER the import statements in emergencyService.ts
+// Add this RIGHT AFTER the import statements in .ts
 
 console.log('=== CHECKING NATIVE MODULES ===');
 console.log('Platform:', Platform.OS);

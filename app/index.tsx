@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, Platform, DeviceEventEmitter, ToastAndroid, Alert } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Platform, DeviceEventEmitter, ToastAndroid, Alert, AppState, NativeModules } from 'react-native';
 import { router } from 'expo-router';
 import { authService } from '@/services/authService';
 import { emergencyService } from '@/services/emergencyService';
@@ -7,60 +7,68 @@ import { initDB } from '@/services/sqliteService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Shield } from 'lucide-react-native';
 
+const { ShakeControlModule } = NativeModules;
+
 export default function Index() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Initialize SQLite database
     initDB().catch(err => console.error('Failed to init DB:', err));
 
-    // Setup event listeners
-    const smsSubscription = DeviceEventEmitter.addListener('onEmergencyConfirmed', handleEmergencySmsDispatch);
-    const warningSubscription = setupForegroundShakeListener();
+    const setupListeners = () => {
+      const emergencySubscription = DeviceEventEmitter.addListener(
+        'onEmergencyConfirmed', 
+        handleEmergencySmsDispatch
+      );
+      
+      let warningSubscription = { remove: () => {} };
+      if (Platform.OS === 'android') {
+        warningSubscription = DeviceEventEmitter.addListener('onShakeWarning', () => {
+          ToastAndroid.show('Shake Detected! Confirm in notification.', ToastAndroid.LONG);
+        });
+      }
+      return { emergencySubscription, warningSubscription };
+    };
 
-    // Initialize app
+    let { emergencySubscription, warningSubscription } = setupListeners();
+
+    const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        emergencySubscription?.remove();
+        warningSubscription?.remove();
+        const listeners = setupListeners();
+        emergencySubscription = listeners.emergencySubscription;
+        warningSubscription = listeners.warningSubscription;
+      }
+    });
+
     initializeApp();
 
     return () => {
-      smsSubscription.remove();
-      warningSubscription();
+      emergencySubscription?.remove();
+      warningSubscription?.remove();
+      appStateSubscription?.remove();
     };
   }, []);
 
   const handleEmergencySmsDispatch = async () => {
-    console.log('🚨 EVENT RECEIVED: User confirmed SOS from notification! Sending SMS...');
+    console.log('🚨 EVENT RECEIVED: User confirmed SOS! Acknowledging and sending SMS...');
+
+    if (ShakeControlModule && ShakeControlModule.acknowledgeEmergencyEvent) {
+        ShakeControlModule.acknowledgeEmergencyEvent();
+    }
     
     const result = await emergencyService.sendEmergencyAlert();
     
     if (result.success) {
-      Alert.alert(
-        '✅ Alert Sent',
-        `Emergency alert sent to ${result.sentTo} contacts!`,
-        [{ text: 'OK' }]
-      );
+      Alert.alert('✅ Alert Sent', `Emergency alert sent to ${result.sentTo} contacts!`);
     } else {
-      Alert.alert(
-        '❌ Alert Failed',
-        result.error || 'Failed to send emergency alert.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('❌ Alert Failed', result.error || 'Failed to send emergency alert.');
     }
-  };
-
-  const setupForegroundShakeListener = () => {
-    if (Platform.OS === 'android') {
-      const warningSubscription = DeviceEventEmitter.addListener('onShakeWarning', () => {
-        ToastAndroid.show('Shake Detected! Confirm action in notification bar.', ToastAndroid.LONG);
-      });
-      return () => warningSubscription.remove();
-    }
-    return () => {};
   };
 
   const initializeApp = async () => {
     try {
-      console.log('🚀 Initializing app...');
-      
       const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
       const hasLaunched = await AsyncStorage.getItem('hasLaunched');
       
@@ -82,15 +90,6 @@ export default function Index() {
       }
 
       if (isAuthenticated) {
-        const ignoringBattery = await emergencyService.checkBatteryOptimization();
-        if (!ignoringBattery) {
-          Alert.alert(
-            "Important: Background Running",
-            "Please disable battery optimization for SafeHer to ensure emergency detection works when the app is closed.",
-            [{ text: 'Open Settings', onPress: () => emergencyService.requestBatteryOptimizationExemption() }]
-          );
-        }
-        
         router.replace('/(tabs)');
       } else {
         router.replace('/auth/login');

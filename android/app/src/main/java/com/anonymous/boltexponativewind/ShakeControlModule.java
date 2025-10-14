@@ -36,11 +36,9 @@ public class ShakeControlModule extends ReactContextBaseJavaModule {
     public void startService(Promise promise) {
         ReactApplicationContext context = getReactApplicationContext();
         
-        // Android 13+ Notification Permission Check (Mandatory for foreground service visibility)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13 (SDK 33)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) 
                 != PackageManager.PERMISSION_GRANTED) {
-                // Reject the promise if permission is not granted. JS layer must prompt user.
                 Log.e(TAG, "Notification permission denied. Cannot start foreground service.");
                 promise.reject("PERMISSION_DENIED", "Notification permission (Android 13+) is required but denied.");
                 return;
@@ -80,9 +78,13 @@ public class ShakeControlModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void checkServiceStatus(Promise promise) {
-        // Simple check - always resolve true for now
-        promise.resolve(true);
+    public void acknowledgeEmergencyEvent() {
+        Log.d(TAG, "JS has acknowledged the emergency event. Stopping retries.");
+        
+        MainActivity.isEmergencyEventPending = false;
+        if (MainActivity.retryRunnable != null) {
+            MainActivity.retryHandler.removeCallbacks(MainActivity.retryRunnable);
+        }
     }
 
     @ReactMethod

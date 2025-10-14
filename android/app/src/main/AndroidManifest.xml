@@ -2,37 +2,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   
   <!-- ============================================================
-       LOCATION PERMISSIONS
+       PERMISSIONS (Deduplicated and Corrected)
        ============================================================ -->
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
-  
-  <!-- ============================================================
-       FOREGROUND SERVICE PERMISSIONS
-       ============================================================ -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
-  
-  <!-- ============================================================
-       OTHER PERMISSIONS
-       ============================================================ -->
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.SEND_SMS"/>
   <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
-  
-  <!-- ============================================================
-       NEW: PERSISTENCE PERMISSIONS (For Background Survival)
-       ============================================================ -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
-
-  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
   
   <application
     android:name=".MainApplication"
@@ -57,49 +42,42 @@
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
-      
-      <intent-filter>
-        <action android:name="com.anonymous.boltexponativewind.EMERGENCY_TRIGGER"/>
-        <category android:name="android.intent.category.DEFAULT"/>
-      </intent-filter>
     </activity>
     
     <!-- ============================================================
-         SHAKE DETECTION SERVICE
-         IMPORTANT: stopWithTask="false" keeps service alive when app closes
+         SERVICES
          ============================================================ -->
+    <!-- Main shake detection service -->
     <service
       android:name=".ShakeService"
       android:enabled="true"
       android:exported="false"
       android:foregroundServiceType="location"
       android:stopWithTask="false"/>
-    
-    <!-- ============================================================
-         BROADCAST RECEIVERS (EXISTING)
-         ============================================================ -->
-    <receiver
-      android:name=".ShakeBroadcastReceiver"
+      
+    <!-- Service to send SMS in the background -->
+    <service
+      android:name=".EmergencyDispatchService"
       android:enabled="true"
-      android:exported="false">
-      <intent-filter>
-        <action android:name="com.anonymous.boltexponativewind.SHAKE_DETECTED"/>
-      </intent-filter>
-    </receiver>
-    
+      android:exported="false"
+      android:foregroundServiceType="location"/> <!-- ✅ FIX: Correct foreground service type -->
+
+    <!-- ============================================================
+         BROADCAST RECEIVERS (Deduplicated and Corrected)
+         ============================================================ -->
+    <!-- Handles "YES" and "NO" from the alert notification -->
     <receiver
       android:name=".EmergencyActionReceiver"
       android:enabled="true"
       android:exported="false">
       <intent-filter>
-        <action android:name="ACTION_SEND_EMERGENCY"/>
-        <action android:name="ACTION_CANCEL_EMERGENCY"/>
+          <!-- ✅ FIX: Use fully qualified action names -->
+        <action android:name="com.anonymous.boltexponativewind.ACTION_SEND_EMERGENCY"/>
+        <action android:name="com.anonymous.boltexponativewind.ACTION_CANCEL_EMERGENCY"/>
       </intent-filter>
     </receiver>
     
-    <!-- ============================================================
-         NEW: BOOT RECEIVER (Starts service on device boot)
-         ============================================================ -->
+    <!-- Starts the service when the phone boots up -->
     <receiver
       android:name=".BootReceiver"
       android:enabled="true"
@@ -107,58 +85,26 @@
       android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED"/>
-        <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
     </receiver>
     
-    <!-- ============================================================
-         NEW: SERVICE RESTART RECEIVER (Restarts service if killed)
-         ============================================================ -->
+    <!-- Restarts the service if it's killed by the system -->
     <receiver
       android:name=".ServiceRestartReceiver"
       android:enabled="true"
       android:exported="false"/>
-    
-    <!-- ============================================================
-         HEADLESS TASK SERVICE (For background JS execution)
-         ============================================================ -->
-    <service
-      android:name=".ShakeHeadlessTaskService"
-      android:enabled="true"
-      android:exported="false"/>
-
-    <!-- Emergency Alert Service (for sending SMS from background) -->
-<service
-    android:name=".EmergencyAlertService"
-    android:enabled="true"
-    android:exported="false"/>
 
     <receiver
-    android:name=".NotificationActionReceiver"
-    android:exported="true">
-    <intent-filter>
-        <action android:name="com.anonymous.boltexponativewind.ACTION_SEND_EMERGENCY" />
-        <action android:name="com.anonymous.boltexponativewind.ACTION_CANCEL_EMERGENCY" />
-    </intent-filter>
+  android:name=".SmsStatusReceiver"
+  android:enabled="true"
+  android:exported="false">
+  <intent-filter>
+    <action android:name="SMS_SENT"/>
+    <action android:name="SMS_DELIVERED"/>
+  </intent-filter>
 </receiver>
-
-<receiver
-    android:name=".NotificationActionReceiver"
-    android:exported="true">
-    <intent-filter>
-        <action android:name="com.anonymous.boltexponativewind.ACTION_SEND_EMERGENCY" />
-        <action android:name="com.anonymous.boltexponativewind.ACTION_CANCEL_EMERGENCY" />
-    </intent-filter>
-</receiver>
-
-<service
-    android:name=".EmergencyDispatchService"
-    android:exported="false"
-    android:foregroundServiceType="dataSync|connectedDevice|location|shortService" />
-
-
     
   </application>
-
 </manifest>
+

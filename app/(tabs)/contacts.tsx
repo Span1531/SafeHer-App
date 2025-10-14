@@ -1,5 +1,5 @@
 // app/(tabs)/contacts.tsx
-// Fixed version with working add contact functionality
+// ✅ CORRECTED VERSION - Now uses contactsService to ensure data is mirrored to native code.
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -13,15 +13,7 @@ import {
   Alert,
 } from 'react-native';
 import { Plus, Trash2, Phone, User } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-interface EmergencyContact {
-  id: string;
-  name: string;
-  phone: string;
-}
-
-const CONTACTS_STORAGE_KEY = '@safeher_emergency_contacts';
+import { contactsService, EmergencyContact } from '@/services/contactsService'; // 👈 CRITICAL CHANGE: Import the service
 
 export default function ContactsScreen() {
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
@@ -33,21 +25,26 @@ export default function ContactsScreen() {
     loadContacts();
   }, []);
 
+  // ✅ CRITICAL CHANGE: This function now uses the service
   const loadContacts = async () => {
     try {
-      const storedContacts = await AsyncStorage.getItem(CONTACTS_STORAGE_KEY);
-      if (storedContacts) {
-        setContacts(JSON.parse(storedContacts));
-      }
+      const loadedContacts = await contactsService.getContacts();
+      setContacts(loadedContacts);
     } catch (error) {
       console.error('Failed to load contacts:', error);
     }
   };
 
+  // ✅ CRITICAL CHANGE: This function now uses the service
   const saveContacts = async (updatedContacts: EmergencyContact[]) => {
     try {
-      await AsyncStorage.setItem(CONTACTS_STORAGE_KEY, JSON.stringify(updatedContacts));
-      setContacts(updatedContacts);
+      // The service handles both AsyncStorage and native mirroring
+      const success = await contactsService.saveContacts(updatedContacts);
+      if (success) {
+        setContacts(updatedContacts);
+      } else {
+        throw new Error("Failed to save via contactsService");
+      }
     } catch (error) {
       console.error('Failed to save contacts:', error);
       Alert.alert('Error', 'Failed to save contact');
@@ -79,7 +76,7 @@ export default function ContactsScreen() {
     };
 
     const updatedContacts = [...contacts, newContact];
-    saveContacts(updatedContacts);
+    saveContacts(updatedContacts); // This now calls the corrected save function
 
     // Reset form and close modal
     setNewContactName('');
@@ -100,7 +97,7 @@ export default function ContactsScreen() {
           style: 'destructive',
           onPress: () => {
             const updatedContacts = contacts.filter(contact => contact.id !== id);
-            saveContacts(updatedContacts);
+            saveContacts(updatedContacts); // This now calls the corrected save function
           },
         },
       ]

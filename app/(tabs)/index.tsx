@@ -7,6 +7,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  NativeModules,
 } from "react-native";
 import { Shield, MapPin, MessageSquare, AlertCircle } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
@@ -27,6 +28,38 @@ export default function HomeScreen() {
 
   useEffect(() => {
     checkAuthStatus();
+  }, []);
+
+
+  const { SafeHerStorage } = NativeModules;
+  
+  useEffect(() => {
+  console.log('🧪 Testing direct SafeHerStorage call...');
+  if (SafeHerStorage?.setValue) {
+    SafeHerStorage.setValue('test_key', 'hello_world');
+    console.log('✅ Called SafeHerStorage.setValue("test_key", "hello_world")');
+  } else {
+    console.log('❌ SafeHerStorage.setValue not available');
+  }
+}, []);
+
+  useEffect(() => {
+    console.log('🔍 === NATIVE MODULES DEBUG ===');
+    console.log('Platform:', Platform.OS);
+    console.log('Available Native Modules:', Object.keys(NativeModules).sort());
+    
+    const { SafeHerStorage, ShakeControlModule, AutoSmsModule } = NativeModules;
+    
+    console.log('SafeHerStorage available:', !!SafeHerStorage);
+    console.log('ShakeControlModule available:', !!ShakeControlModule);
+    console.log('AutoSmsModule available:', !!AutoSmsModule);
+    
+    if (SafeHerStorage) {
+      console.log('✅ SafeHerStorage methods:', Object.keys(SafeHerStorage));
+    } else {
+      console.error('❌ SafeHerStorage is NULL!');
+    }
+    console.log('================================');
   }, []);
 
   const checkAuthStatus = async () => {

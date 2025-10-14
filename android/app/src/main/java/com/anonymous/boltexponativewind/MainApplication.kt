@@ -48,6 +48,7 @@ class MainApplication : Application(), ReactApplication {
                 PackageList(this).packages.apply {
                     // CRITICAL: Add our custom ShakePackage for native modules
                     add(ShakePackage())
+                    add(SafeHerStoragePackage())
                 }
 
             override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
