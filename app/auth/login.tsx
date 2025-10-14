@@ -174,21 +174,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     justifyContent: "center",
   },
-  countryCodeText: { fontSize: 16, fontWeight: "600" },
+  countryCodeText: { fontSize: 16, fontWeight: "600", color: "#1b1d20ff" },
   phoneInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    padding: 14,
-  },
-  otpInput: {
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    padding: 16,
-    fontSize: 24,
-    textAlign: "center",
-    marginBottom: 24,
-  },
+  flex: 1,
+  borderWidth: 1,
+  borderColor: "#def2f2ff",
+  padding: 14,
+  color: '#000000', // <<< ADDED: Fixes white text bug
+},
+  // Inside const styles = StyleSheet.create({...
+otpInput: {
+  borderWidth: 1,
+  borderColor: "#D1D5DB",
+  padding: 16,
+  fontSize: 24,
+  textAlign: "center",
+  marginBottom: 24,
+  color: '#000000', // <<< ADDED: Fixes white text bug
+},
   primaryButton: {
     flexDirection: "row",
     justifyContent: "center",

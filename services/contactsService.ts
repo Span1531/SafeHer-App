@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NativeModules, Platform } from 'react-native';
 
+const { SafeHerStorage } = NativeModules;
 const CONTACTS_STORAGE_KEY = '@safeher_emergency_contacts';
 
 export interface EmergencyContact {
@@ -15,15 +17,7 @@ class ContactsService {
   async getContacts(): Promise<EmergencyContact[]> {
     try {
       const contactsJson = await AsyncStorage.getItem(CONTACTS_STORAGE_KEY);
-      
-      if (!contactsJson) {
-        console.log('📇 No contacts found in storage');
-        return [];
-      }
-
-      const contacts = JSON.parse(contactsJson);
-      console.log(`📇 Loaded ${contacts.length} contacts from storage`);
-      return contacts;
+      return contactsJson ? JSON.parse(contactsJson) : [];
     } catch (error) {
       console.error('❌ Error loading contacts:', error);
       return [];
@@ -31,12 +25,22 @@ class ContactsService {
   }
 
   /**
-   * Save contacts to AsyncStorage
+   * Save contacts to AsyncStorage and mirror to native SharedPreferences
    */
   async saveContacts(contacts: EmergencyContact[]): Promise<boolean> {
     try {
       await AsyncStorage.setItem(CONTACTS_STORAGE_KEY, JSON.stringify(contacts));
-      console.log(`✅ Saved ${contacts.length} contacts to storage`);
+      console.log(`✅ Saved ${contacts.length} contacts to AsyncStorage`);
+
+      // ✅ CORRECTED LOGIC: Directly call the native module
+      if (Platform.OS === 'android' && SafeHerStorage?.setValue) {
+        const phoneNumbers = contacts.map(c => c.phone.trim()).join(',');
+        console.log(`📤 Attempting to mirror contacts to native storage: "${phoneNumbers}"`);
+        SafeHerStorage.setValue('emergency_contacts', phoneNumbers);
+      } else if (Platform.OS === 'android') {
+        console.warn('⚠️ SafeHerStorage native module not available during save.');
+      }
+
       return true;
     } catch (error) {
       console.error('❌ Error saving contacts:', error);
@@ -45,31 +49,19 @@ class ContactsService {
   }
 
   /**
-   * Add a new emergency contact
+   * Add a new contact
    */
   async addContact(name: string, phone: string): Promise<EmergencyContact | null> {
     try {
       const contacts = await this.getContacts();
-      
-      // Create new contact
       const newContact: EmergencyContact = {
         id: Date.now().toString(),
         name: name.trim(),
         phone: phone.trim(),
       };
-
-      // Add to list
       contacts.push(newContact);
-      
-      // Save
-      const saved = await this.saveContacts(contacts);
-      
-      if (saved) {
-        console.log('✅ Contact added:', newContact);
-        return newContact;
-      }
-      
-      return null;
+      await this.saveContacts(contacts); // This will now automatically mirror the data
+      return newContact;
     } catch (error) {
       console.error('❌ Error adding contact:', error);
       return null;
@@ -83,14 +75,7 @@ class ContactsService {
     try {
       const contacts = await this.getContacts();
       const filtered = contacts.filter(c => c.id !== id);
-      
-      const saved = await this.saveContacts(filtered);
-      
-      if (saved) {
-        console.log('✅ Contact deleted:', id);
-      }
-      
-      return saved;
+      return await this.saveContacts(filtered);
     } catch (error) {
       console.error('❌ Error deleting contact:', error);
       return false;
@@ -104,52 +89,15 @@ class ContactsService {
     try {
       const contacts = await this.getContacts();
       const index = contacts.findIndex(c => c.id === id);
-      
       if (index === -1) {
-        console.error('❌ Contact not found:', id);
         return false;
       }
-
-      // Update contact
-      contacts[index] = {
-        id,
-        name: name.trim(),
-        phone: phone.trim(),
-      };
-
-      const saved = await this.saveContacts(contacts);
-      
-      if (saved) {
-        console.log('✅ Contact updated:', contacts[index]);
-      }
-      
-      return saved;
+      contacts[index] = { id, name: name.trim(), phone: phone.trim() };
+      return await this.saveContacts(contacts);
     } catch (error) {
       console.error('❌ Error updating contact:', error);
       return false;
     }
-  }
-
-  /**
-   * Clear all contacts (for testing/debugging)
-   */
-  async clearAllContacts(): Promise<boolean> {
-    try {
-      await AsyncStorage.removeItem(CONTACTS_STORAGE_KEY);
-      console.log('🗑️ All contacts cleared');
-      return true;
-    } catch (error) {
-      console.error('❌ Error clearing contacts:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Get contact count
-   */
-  async getContactCount(): Promise<number> {
-    const contacts = await this.getContacts();
-    return contacts.length;
   }
 }
 

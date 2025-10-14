@@ -1,15 +1,23 @@
+import { 
+    Platform, 
+    PermissionsAndroid, 
+    NativeModules, 
+    DeviceEventEmitter,
+    AppRegistry,
+    Alert
+} from "react-native";
 import * as Location from "expo-location";
-import * as SMS from "expo-sms";
-import { Platform } from "react-native";
+import * as Notifications from "expo-notifications"; // <<< NEW IMPORT FOR NOTIFICATION PERMISSIONS
 import { contactsService } from "./contactsService";
 
-// NOTE: The 'expo-android-sms-sender' import has been removed to restore Expo Go compatibility.
 
-interface EmergencyResult {
-  success: boolean;
-  error?: string;
-  sentTo?: number;
-}
+
+
+// =================================================================
+// 1. NATIVE MODULE SETUP (CRITICAL)
+// =================================================================
+
+const { AutoSmsModule, ShakeControlModule } = NativeModules;
 
 interface EmergencyContact {
   id: string;
@@ -17,197 +25,518 @@ interface EmergencyContact {
   phone: string;
 }
 
+interface EmergencyResult {
+  success: boolean;
+  error?: string;
+  sentTo?: number;
+}
+
+// -----------------------------------------------------------------
+// DEBUG LOGS (UNCHANGED)
+// -----------------------------------------------------------------
+if (Platform.OS === 'android') {
+    console.log('=== NATIVE MODULES DEBUG ===');
+    console.log('AutoSmsModule available:', !!AutoSmsModule);
+    console.log('ShakeControlModule available:', !!ShakeControlModule);
+    
+    if (AutoSmsModule) {
+        console.log('AutoSmsModule methods:', Object.keys(AutoSmsModule));
+    } else {
+        console.error('❌ AutoSmsModule is NULL! Check MainApplication.kt');
+    }
+    
+    if (ShakeControlModule) {
+        console.log('ShakeControlModule methods:', Object.keys(ShakeControlModule));
+    } else {
+        console.error('❌ ShakeControlModule is NULL! Check MainApplication.kt');
+    }
+    console.log('============================');
+}
+
+// Add this RIGHT AFTER the import statements in .ts
+
+console.log('=== CHECKING NATIVE MODULES ===');
+console.log('Platform:', Platform.OS);
+console.log('AutoSmsModule exists:', !!AutoSmsModule);
+console.log('ShakeControlModule exists:', !!ShakeControlModule);
+
+if (Platform.OS === 'android') {
+  if (!AutoSmsModule) {
+    console.error('❌❌❌ AutoSmsModule IS NULL - Native module not registered!');
+  } else {
+    console.log('✅ AutoSmsModule available');
+    console.log('AutoSmsModule methods:', Object.keys(AutoSmsModule));
+  }
+  
+  if (!ShakeControlModule) {
+    console.error('❌❌❌ ShakeControlModule IS NULL - Native module not registered!');
+  } else {
+    console.log('✅ ShakeControlModule available');
+    console.log('ShakeControlModule methods:', Object.keys(ShakeControlModule));
+  }
+}
+console.log('================================');
+
+// =================================================================
+// 2. PERMISSION HELPERS (UNCHANGED)
+// =================================================================
+
 /**
- * Get current device location
+ * Request location permissions properly on Android
  */
+const requestLocationPermissions = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  try {
+    console.log('📍 Requesting Android location permissions...');
+    
+    // Step 1: Request FINE_LOCATION first
+    const fineLocation = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: "Location Permission",
+        message: "SafeHer needs access to your location to send emergency alerts with your position.",
+        buttonPositive: "Allow",
+        buttonNegative: "Deny"
+      }
+    );
+    
+    console.log('Fine location result:', fineLocation);
+    
+    if (fineLocation !== PermissionsAndroid.RESULTS.GRANTED) {
+      console.warn('❌ Fine location permission denied');
+      return false;
+    }
+    
+    // Step 2: On Android 10+ (API 29+), also request BACKGROUND_LOCATION
+    if (Platform.Version >= 29) {
+      console.log('📍 Android 10+ detected, requesting background location...');
+      
+      const backgroundLocation = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+        {
+          title: "Background Location Permission",
+          message: "SafeHer needs access to location in the background to detect shake emergencies when the app is closed. Please select 'Allow all the time'.",
+          buttonPositive: "Allow",
+          buttonNegative: "Deny"
+        }
+      );
+      
+      console.log('Background location result:', backgroundLocation);
+      
+      if (backgroundLocation !== PermissionsAndroid.RESULTS.GRANTED) {
+        console.warn('⚠️ Background location denied - shake detection may not work when app is closed');
+        // Don't fail completely - still allow emergency button to work
+      }
+    }
+    
+    // Step 3: Also use Expo's location API for consistency
+    const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+    console.log('Expo foreground permission status:', foregroundStatus);
+    
+    if (foregroundStatus !== "granted") {
+      console.warn("❌ Expo foreground location permission not granted");
+      return false;
+    }
+    
+    console.log('✅ All location permissions granted successfully');
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error requesting location permissions:', error);
+    return false;
+  }
+};
+
+/**
+ * Check if location permissions are already granted
+ */
+const checkLocationPermissions = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  try {
+    const fineLocation = await PermissionsAndroid.check(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+    );
+    
+    console.log('Location permission check:', fineLocation);
+    return fineLocation;
+    
+  } catch (error) {
+    console.error('Error checking location permissions:', error);
+    return false;
+  }
+};
+
+// =================================================================
+// 3. CORE LOGIC FUNCTIONS (UNCHANGED)
+// =================================================================
+
 const getCurrentLocation = async (): Promise<Location.LocationObject | null> => {
   try {
-    // Check existing permissions first
-    const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
+    console.log('📍 Getting current location...');
     
-    let finalStatus = existingStatus;
+    // First check if we have permissions
+    const hasPermission = await checkLocationPermissions();
     
-    // If not granted, request permission
-    if (existingStatus !== 'granted') {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      finalStatus = status;
+    if (!hasPermission) {
+      console.log('No permission, requesting...');
+      const granted = await requestLocationPermissions();
+      
+      if (!granted) {
+        console.error('❌ Location permissions not granted');
+        return null;
+      }
     }
+
+    console.log('📍 Fetching GPS position with high accuracy...');
     
-    if (finalStatus !== 'granted') {
-      console.error('Location permission not granted');
+    // Get location with timeout
+    const location = await Promise.race([
+      Location.getCurrentPositionAsync({ 
+        accuracy: Location.Accuracy.High,
+        timeInterval: 5000,
+        distanceInterval: 0
+      }),
+      new Promise<null>((_, reject) => 
+        setTimeout(() => reject(new Error('Location timeout')), 15000)
+      )
+    ]);
+    
+    if (!location) {
+      console.error('❌ Location fetch timed out');
       return null;
     }
-
-    // Get location with high accuracy
-    const location = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-    });
-
-    return location;
+    
+    console.log('✅ Location obtained:', location.coords.latitude, location.coords.longitude);
+    return location as Location.LocationObject;
+    
   } catch (error) {
-    console.error('Failed to get location:', error);
+    console.error("❌ Failed to get location:", error);
+    
+    // Try last known location as fallback
+    try {
+      console.log('📍 Trying last known location...');
+      const lastLocation = await Location.getLastKnownPositionAsync();
+      
+      if (lastLocation) {
+        console.log('✅ Using last known location:', lastLocation.coords.latitude, lastLocation.coords.longitude);
+        return lastLocation;
+      }
+    } catch (fallbackError) {
+      console.error('❌ Last known location also failed:', fallbackError);
+    }
+    
     return null;
   }
 };
 
 /**
- * Main emergency alert function - sends SMS with location to all contacts
- * This version uses expo-sms, requiring the user to manually press "Send" in the external app.
+ * Sends an SMS message using the native AutoSmsModule for silent delivery
  */
+const sendSmsLogic = async (phoneNumbers: string[], message: string): Promise<void> => {
+    if (Platform.OS === 'android') {
+        if (!AutoSmsModule) {
+            throw new Error('AutoSmsModule not available. Native module not registered.');
+        }
+        
+        if (!AutoSmsModule.sendSms) {
+            throw new Error('AutoSmsModule.sendSms method not found.');
+        }
+
+        console.log('📱 Sending SMS to', phoneNumbers.length, 'contacts via native module...');
+        
+        try {
+            // The native module returns a Promise
+            const result = await AutoSmsModule.sendSms(phoneNumbers, message);
+            console.log('✅ SMS send result:', result);
+        } catch (error: any) {
+            console.error('❌ Native SMS send failed:', error);
+            throw new Error(`SMS send failed: ${error.message || error}`);
+        }
+    } else {
+        throw new Error('SMS sending only supported on Android');
+    }
+};
+
+// =================================================================
+// 4. EXPORTED EMERGENCY ALERT FUNCTIONS (UNCHANGED)
+// =================================================================
+
 export const sendEmergencyAlert = async (): Promise<EmergencyResult> => {
   try {
-    console.log('🚨 Starting emergency alert (Expo Go Mode)...');
+    console.log("🚨 === EMERGENCY ALERT INITIATED ===");
 
-    // 1. Get emergency contacts
-    let contacts: EmergencyContact[] = [];
-    
-    try {
-      contacts = await contactsService.getContacts();
-    } catch (contactError) {
-      console.error('❌ Failed to load contacts:', contactError);
-      return {
-        success: false,
-        error: 'Failed to load emergency contacts. Please check app permissions.',
-      };
+    // 1. Check SMS Permission (Android)
+    if (Platform.OS === "android") {
+      console.log('Checking SMS permission...');
+      
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.SEND_SMS,
+        {
+          title: "Emergency SMS Permission",
+          message: "SafeHer needs permission to send emergency SMS alerts automatically.",
+          buttonPositive: "Allow",
+        }
+      );
+
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        console.log("❌ SMS Permission denied by user");
+        return { success: false, error: "SMS permission denied" };
+      }
+      
+      console.log('✅ SMS permission granted');
     }
+
+    // 2. Get Emergency Contacts
+    console.log('Loading emergency contacts...');
+    const contacts: EmergencyContact[] = await contactsService.getContacts();
+    const phoneNumbers = contacts.map((c) => c.phone);
     
-    if (contacts.length === 0) {
-      console.log('❌ No emergency contacts found');
-      return {
-        success: false,
-        error: 'No emergency contacts found. Please add contacts in the Contacts tab first.',
-      };
+    console.log('Found', phoneNumbers.length, 'emergency contacts');
+    
+    if (phoneNumbers.length === 0) {
+      return { success: false, error: "No emergency contacts found. Please add contacts first." };
     }
 
-    console.log(`📇 Found ${contacts.length} emergency contacts:`, contacts.map(c => c.name));
-
-    // 2. Get current location
+    // 3. Get Current Location
     const location = await getCurrentLocation();
     
     if (!location) {
-      console.log('❌ Could not get location');
-      return {
-        success: false,
-        error: 'Could not get your location. Please check location permissions.',
+      // Show helpful error message
+      Alert.alert(
+        "Location Unavailable",
+        "Cannot access location. Please:\n\n1. Go to Settings > Apps > SafeHer > Permissions\n2. Set Location to 'Allow all the time'\n3. Try again",
+        [{ text: "OK" }]
+      );
+      
+      return { 
+        success: false, 
+        error: "Unable to get location. Please check location permissions in Settings > Apps > SafeHer > Permissions and set to 'Allow all the time'." 
       };
     }
 
+    // 4. Reverse Geocode to get readable address
+    console.log('Getting address from coordinates...');
     const { latitude, longitude } = location.coords;
-    console.log(`📍 Location: ${latitude}, ${longitude}`);
-
-    // 3. Build emergency message with Google Maps link
-    const mapsLink = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`; 
-    const message = `🚨 EMERGENCY ALERT from SafeHer 🚨\n\nI need help! My current location is:\n${mapsLink}\n\nPlease check on me immediately!`;
-
-    // 4. Extract phone numbers
-    const phoneNumbers = contacts.map(c => c.phone);
-    console.log('📱 Target Phones:', phoneNumbers);
-
-    // 5. Platform Check
-    if (Platform.OS === 'web') {
-      console.log('⚠️ Web platform - SMS simulation');
-      return { success: true, sentTo: phoneNumbers.length };
-    }
-
-    // 6. Check SMS availability
-    const isAvailable = await SMS.isAvailableAsync();
+    let address = "Address unavailable";
     
-    if (!isAvailable) {
-      console.log('❌ SMS not available on this device');
-      return {
-        success: false,
-        error: 'SMS is not available on this device',
-      };
+    try {
+      const [place] = await Location.reverseGeocodeAsync({ latitude, longitude });
+      
+      if (place) {
+        const parts = [
+          place.name,
+          place.street,
+          place.city,
+          place.region,
+          place.postalCode
+        ].filter(Boolean);
+        
+        address = parts.length > 0 ? parts.join(", ") : "Location coordinates only";
+      }
+      
+      console.log('📍 Address:', address);
+    } catch (error) {
+      console.warn('⚠️ Reverse geocoding failed:', error);
+      address = `Lat: ${latitude.toFixed(6)}, Long: ${longitude.toFixed(6)}`;
     }
 
-    // 7. Send SMS (Opens Composer)
-    console.log('📤 Opening SMS composer. User must press send...');
-    const { result } = await SMS.sendSMSAsync(phoneNumbers, message);
+    // 5. Construct Emergency Message
+    const mapsLink = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+    const timestamp = new Date().toLocaleString();
     
-    console.log('SMS Composer Result:', result);
+    const message = `🚨 EMERGENCY ALERT from SafeHer
 
-    // 💥 FIX: Accessing SMSResult via bracket notation is safer in Expo Go to avoid crashing.
-    const SMS_SENT = SMS.SMSResult ? SMS.SMSResult.SENT : 'sent';
-    const SMS_COMPOSED = SMS.SMSResult ? SMS.SMSResult.COMPOSED : 'composed';
-    const SMS_CANCELLED = SMS.SMSResult ? SMS.SMSResult.CANCELLED : 'cancelled';
+I NEED HELP IMMEDIATELY!
 
+Time: ${timestamp}
+Location: ${address}
 
-    if (result === SMS_SENT || result === SMS_COMPOSED) {
-      console.log('✅ Emergency SMS composer opened/sent successfully!');
-      // Assuming success if the user pressed send or composed the message
-      return {
-        success: true,
-        sentTo: phoneNumbers.length,
-      };
-    } else if (result === SMS_CANCELLED) {
-      console.log('⚠️ SMS sending was cancelled by user');
-      return {
-        success: false,
-        error: 'SMS sending was cancelled. You MUST tap "Send" in your messaging app to complete the alert.',
-      };
-    } else {
-      console.log('❌ SMS failed to send or returned unknown status.');
-      return {
-        success: false,
-        error: `Alert composer failed or returned unknown status: ${result}. Please try again.`,
-      };
-    }
-  } catch (error) {
-    console.error('❌ Emergency alert error:', error);
+Google Maps: ${mapsLink}
+
+Please check on me right away or call emergency services!
+
+- Sent automatically by SafeHer`;
+
+    console.log('Message prepared, length:', message.length);
+
+    // 6. Send SMS via Native Module
+    await sendSmsLogic(phoneNumbers, message);
+
+    console.log('✅ === EMERGENCY ALERT SENT SUCCESSFULLY ===');
+    return { success: true, sentTo: phoneNumbers.length };
+
+  } catch (error: any) {
+    console.error("❌ Emergency alert failed:", error);
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to send emergency alert'
+      error: error.message || "Unexpected error occurred" 
     };
   }
 };
 
-/**
- * Emergency Service Class (for backwards compatibility)
- */
-class EmergencyService {
-  async triggerEmergency(): Promise<EmergencyResult> {
-    // This is the main entry point, using the robust sendEmergencyAlert logic.
-    return await sendEmergencyAlert();
-  }
+// =================================================================
+// 5. SHAKE SERVICE CONTROL FUNCTIONS (UPDATED FOR V3 STABILITY)
+// =================================================================
 
-  // sendLocationSMS is kept for compatibility but should use the triggerEmergency wrapper
-  async sendLocationSMS(phoneNumbers: string[], message: string): Promise<{ success: boolean }> {
-    try {
-      if (Platform.OS === 'web') {
-        console.log('📱 SMS stub:', phoneNumbers, message);
-        return { success: true };
-      }
-
-      const isAvailable = await SMS.isAvailableAsync();
-      if (!isAvailable) {
-        return { success: false };
-      }
-      
-      const SMS_CANCELLED = SMS.SMSResult ? SMS.SMSResult.CANCELLED : 'cancelled';
-
-      const { result } = await SMS.sendSMSAsync(phoneNumbers, message);
-      // Relaxed check for compatibility
-      return { success: result !== SMS_CANCELLED };
-    } catch (error) {
-      console.error('SMS error:', error);
-      return { success: false };
+export const startBackgroundShakeDetection = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+        return false;
     }
-  }
-
-  async getCurrentLocation(): Promise<{ latitude: number; longitude: number } | null> {
-    const location = await getCurrentLocation();
-    if (!location) return null;
     
-    return {
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude
-    };
-  }
+    // --- STEP 1: NOTIFICATION PERMISSION (MANDATORY FOR ANDROID 13+) ---
+    if (Platform.Version >= 33) {
+        console.log('🔔 Requesting notification permission (Android 13+)...');
+        // This prompts the user for the notification permission (POST_NOTIFICATIONS)
+        const notificationStatus = await Notifications.requestPermissionsAsync(); 
+        
+        if (notificationStatus.status !== 'granted') {
+            Alert.alert(
+                "Notification Permission Required",
+                "Notifications permission is mandatory to display the 'SafeHer Active' persistent indicator. Please grant this permission in your device settings.",
+                [{ text: "OK" }]
+            );
+            // This is likely why the notification wasn't visible and the flow broke!
+            return false;
+        }
+        console.log('✅ Notification permission granted');
+    }
 
-  async cancelEmergency(): Promise<void> {
-    console.log('✅ Emergency cancelled');
-    return Promise.resolve();
-  }
-}
 
-export const emergencyService = new EmergencyService();
+    // --- STEP 2: LOCATION PERMISSIONS ---
+    const hasPermission = await requestLocationPermissions();
+    if (!hasPermission) {
+        console.error('❌ Cannot start shake service without location permissions');
+        // Alert handled within requestLocationPermissions
+        return false;
+    }
+    
+    if (!ShakeControlModule) {
+        console.error('❌ ShakeControlModule not available');
+        return false;
+    }
+    
+    // --- STEP 3: START NATIVE SERVICE ---
+    try {
+        console.log('🔄 Starting shake detection service...');
+        // The native module ShakeControlModule.startService() performs the final 
+        // validation check and starts the Java ShakeService.
+        await ShakeControlModule.startService();
+        console.log('✅ Shake detection service started successfully.');
+        return true;
+    } catch (error: any) {
+        console.error('❌ Failed to start shake service:', error);
+        
+        // Handle rejection from native module if *any* permission check failed 
+        if (error.code === "PERMISSION_DENIED") {
+             Alert.alert(
+                "Service Failed to Start",
+                "Please verify that ALL required permissions (Location, SMS, Notifications) are granted in Settings.",
+                [{ text: "OK" }]
+            );
+        }
+        return false;
+    }
+};
+
+export const stopBackgroundShakeDetection = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+        return false;
+    }
+    
+    if (!ShakeControlModule) {
+        console.error('❌ ShakeControlModule not available');
+        return false;
+    }
+    
+    try {
+        console.log('🛑 Stopping shake detection service...');
+        await ShakeControlModule.stopService();
+        console.log('✅ Shake detection service stopped');
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to stop shake service:', error);
+        return false;
+    }
+};
+
+export const subscribeToShakeEvents = (callback: () => void) => {
+    if (Platform.OS === 'android') {
+        console.log('👂 Subscribing to shake events (broadcast-based)...');
+        return DeviceEventEmitter.addListener('onShakeDetected', callback);
+    }
+    return { remove: () => {} };
+};
+
+/**
+ * Subscribe to emergency confirmation events from notification
+ */
+export const subscribeToEmergencyConfirmation = (callback: () => void) => {
+    if (Platform.OS === 'android') {
+        console.log('👂 Subscribing to emergency confirmation events...');
+        return DeviceEventEmitter.addListener('onEmergencyConfirmed', callback);
+    }
+    return { remove: () => {} };
+};
+
+/**
+ * Check if battery optimization is disabled for the app
+ */
+export const checkBatteryOptimization = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+        return true;
+    }
+    
+    if (!ShakeControlModule) {
+        console.error('❌ ShakeControlModule not available');
+        return false;
+    }
+    
+    try {
+        const result = await ShakeControlModule.checkBatteryOptimization();
+        console.log('Battery optimization check:', result);
+        return result.isIgnoring;
+    } catch (error) {
+        console.error('❌ Failed to check battery optimization:', error);
+        return false;
+    }
+};
+
+/**
+ * Request user to disable battery optimization for the app
+ */
+export const requestBatteryOptimizationExemption = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+        return true;
+    }
+    
+    if (!ShakeControlModule) {
+        console.error('❌ ShakeControlModule not available');
+        return false;
+    }
+    
+    try {
+        await ShakeControlModule.requestBatteryOptimizationExemption();
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to request battery optimization exemption:', error);
+        return false;
+    }
+};
+
+export const emergencyService = { 
+    sendEmergencyAlert, 
+    startBackgroundShakeDetection,
+    stopBackgroundShakeDetection,
+    subscribeToShakeEvents,
+    subscribeToEmergencyConfirmation,
+    requestLocationPermissions,
+    checkLocationPermissions,
+  checkBatteryOptimization,          // NEW
+  requestBatteryOptimizationExemption // NEW
+};

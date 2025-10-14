@@ -1,38 +1,39 @@
 package com.anonymous.boltexponativewind
-import expo.modules.splashscreen.SplashScreenManager
 
+import expo.modules.splashscreen.SplashScreenManager
 import android.os.Build
 import android.os.Bundle
-
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.content.Intent
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
-
 import expo.modules.ReactActivityDelegateWrapper
 
 class MainActivity : ReactActivity() {
-  override fun onCreate(savedInstanceState: Bundle?) {
-    // Set the theme to AppTheme BEFORE onCreate to support
-    // coloring the background, status bar, and navigation bar.
-    // This is required for expo-splash-screen.
-    // setTheme(R.style.AppTheme);
-    // @generated begin expo-splashscreen - expo prebuild (DO NOT MODIFY) sync-f3ff59a738c56c9a6119210cb55f0b613eb8b6af
-    SplashScreenManager.registerOnActivity(this)
-    // @generated end expo-splashscreen
-    super.onCreate(null)
+  companion object {
+    private const val TAG = "MainActivity"
+    
+    @JvmField
+    var isEmergencyEventPending = false
+    @JvmField
+    var retryHandler = Handler(Looper.getMainLooper())
+    @JvmField
+    var retryRunnable: Runnable? = null
   }
 
-  /**
-   * Returns the name of the main component registered from JavaScript. This is used to schedule
-   * rendering of the component.
-   */
+  override fun onCreate(savedInstanceState: Bundle?) {
+    SplashScreenManager.registerOnActivity(this)
+    super.onCreate(null)
+    Log.d(TAG, "MainActivity onCreate")
+    handleEmergencyIntent(intent)
+  }
+
   override fun getMainComponentName(): String = "main"
 
-  /**
-   * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
-   * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
-   */
   override fun createReactActivityDelegate(): ReactActivityDelegate {
     return ReactActivityDelegateWrapper(
           this,
@@ -44,22 +45,58 @@ class MainActivity : ReactActivity() {
           ){})
   }
 
-  /**
-    * Align the back button behavior with Android S
-    * where moving root activities to background instead of finishing activities.
-    * @see <a href="https://developer.android.com/reference/android/app/Activity#onBackPressed()">onBackPressed</a>
-    */
   override fun invokeDefaultOnBackPressed() {
       if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
           if (!moveTaskToBack(false)) {
-              // For non-root activities, use the default implementation to finish them.
               super.invokeDefaultOnBackPressed()
           }
           return
       }
-
-      // Use the default back button implementation on Android S
-      // because it's doing more than [Activity.moveTaskToBack] in fact.
       super.invokeDefaultOnBackPressed()
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    Log.d(TAG, "MainActivity onNewIntent")
+    setIntent(intent)
+    handleEmergencyIntent(intent)
+  }
+
+  private fun handleEmergencyIntent(intent: Intent?) {
+    if (intent?.getBooleanExtra("trigger_emergency", false) == true) {
+      Log.d(TAG, "EMERGENCY TRIGGER: Intent received. Starting event dispatch attempts.")
+      isEmergencyEventPending = true
+      
+      startEmergencyEventSender()
+
+      intent.removeExtra("trigger_emergency")
+    }
+  }
+
+  private fun startEmergencyEventSender() {
+    retryRunnable?.let { retryHandler.removeCallbacks(it) }
+
+    retryRunnable = object : Runnable {
+      private var attempts = 0
+      override fun run() {
+        if (!isEmergencyEventPending) {
+          Log.d(TAG, "SUCCESS: Event acknowledged by JS. Stopping retry sender.")
+          return
+        }
+
+        if (attempts >= 5) {
+          Log.e(TAG, "FAILURE: Event was not acknowledged by JS after 5 attempts. Stopping.")
+          isEmergencyEventPending = false
+          return
+        }
+
+        Log.d(TAG, "Attempt #${attempts + 1}: Firing 'onEmergencyConfirmed' event to JS...")
+        MainApplication.sendEvent("onEmergencyConfirmed", null)
+        
+        attempts++
+        retryHandler.postDelayed(this, 1000)
+      }
+    }
+    retryHandler.post(retryRunnable!!)
   }
 }

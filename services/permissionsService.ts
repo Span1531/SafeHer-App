@@ -1,203 +1,173 @@
-import * as Location from "expo-location";
-import * as Notifications from "expo-notifications";
-import * as SMS from "expo-sms";
-import { Platform, PermissionsAndroid } from "react-native";
+// safeher-frontend/src/services/permissionsService.ts
 
-// class PermissionsService {
-//   async requestNotificationPermission(): Promise<boolean> {
-//     try {
-//       if (Platform.OS === "web") return true;
-//       const { status } = await Notifications.requestPermissionsAsync();
-//       return status === "granted";
-//     } catch (error) {
-//       console.error("Notification permission error:", error);
-//       return false;
-//     }
-//   }
+import { Platform, PermissionsAndroid, Alert } from 'react-native';
+import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications'; 
 
-//   async checkNotificationPermission(): Promise<boolean> {
-//     try {
-//       if (Platform.OS === "web") return true;
-//       const { status } = await Notifications.getPermissionsAsync();
-//       return status === "granted";
-//     } catch {
-//       return false;
-//     }
-//   }
+// =================================================================
+// 1. MODULARIZED REQUEST FUNCTIONS (Required by permissions.tsx)
+// =================================================================
 
-//   async requestLocationPermission(): Promise<boolean> {
-//     try {
-//       const { status } = await Location.requestForegroundPermissionsAsync();
-//       return status === "granted";
-//     } catch (error) {
-//       console.error("Location permission error:", error);
-//       return false;
-//     }
-//   }
+/**
+ * Handles the mandatory POST_NOTIFICATIONS permission request (Android 13+).
+ */
+export const requestNotificationPermission = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android' || Platform.Version < 33) {
+    return true; 
+  }
+  
+  try {
+    const { status } = await Notifications.requestPermissionsAsync();
+    const granted = status === 'granted';
 
-//   async checkLocationPermission(): Promise<boolean> {
-//     try {
-//       const { status } = await Location.getForegroundPermissionsAsync();
-//       return status === "granted";
-//     } catch {
-//       return false;
-//     }
-//   }
+    if (!granted) {
+      console.warn('❌ Notifications permission denied.');
+      Alert.alert('Notification Warning', 'The persistent background indicator will not show unless you grant Notifications permission.');
+    }
+    return granted;
+  } catch (error) {
+    console.error('Error requesting notifications permission:', error);
+    return false;
+  }
+};
 
-//   async requestSMSPermission(): Promise<boolean> {
-//     try {
-//       if (Platform.OS === "web") return true;
-//       if (Platform.OS === "ios") {
-//         // expo-sms will handle this automatically
-//         return await SMS.isAvailableAsync();
-//       }
-//       if (Platform.OS === "android") {
-//         const granted = await PermissionsAndroid.request(
-//           PermissionsAndroid.PERMISSIONS.SEND_SMS
-//         );
-//         return granted === PermissionsAndroid.RESULTS.GRANTED;
-//       }
-//       return false;
-//     } catch (error) {
-//       console.error("SMS permission error:", error);
-//       return false;
-//     }
-//   }
 
-//   async checkSMSPermission(): Promise<boolean> {
-//     try {
-//       if (Platform.OS === "web") return true;
-//       if (Platform.OS === "ios") {
-//         return await SMS.isAvailableAsync();
-//       }
-//       if (Platform.OS === "android") {
-//         return await PermissionsAndroid.check(
-//           PermissionsAndroid.PERMISSIONS.SEND_SMS
-//         );
-//       }
-//       return false;
-//     } catch {
-//       return false;
-//     }
-//   }
-// }
+/**
+ * Handles all Location permissions (Fine, Foreground, Background).
+ */
+export const requestLocationPermission = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
 
-// export const permissionsService = new PermissionsService();
+  let grantedFine = false;
 
-// services/permissionsService.ts
-// Complete version with all required methods
+  try {
+    console.log('📍 Requesting Android FINE_LOCATION...');
+    
+    // Step 1: Request FINE_LOCATION first (blocking operation)
+    const fineLocation = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: "Location Permission",
+        message: "SafeHer needs access to your location to send emergency alerts with your position.",
+        buttonPositive: "Allow",
+        buttonNegative: "Deny"
+      }
+    );
+    
+    if (fineLocation === PermissionsAndroid.RESULTS.GRANTED) {
+      grantedFine = true;
 
-class PermissionsService {
-  async requestNotificationPermission(): Promise<boolean> {
-    try {
-      console.log('🔔 Attempting to load expo-notifications...');
-      const { Notifications } = await import('expo-notifications');
-      console.log('✅ expo-notifications loaded successfully');
-      
-      // Expo Go limitation - some notification APIs don't work
-      // Return true to bypass in development
-      try {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
+      // Step 2: Request BACKGROUND_LOCATION (Android 10+ only)
+      if (Platform.Version >= 29) {
+        console.log('📍 Android 10+ detected, requesting background location...');
         
-        if (existingStatus !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
+        const backgroundLocation = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+          {
+            title: "Background Location Permission",
+            message: "SafeHer needs access to location in the background. Please select 'Allow all the time'.",
+            buttonPositive: "Allow",
+            buttonNegative: "Deny"
+          }
+        );
+        
+        if (backgroundLocation !== PermissionsAndroid.RESULTS.GRANTED) {
+          console.warn('⚠️ Background location denied - background service integrity compromised.');
+          Alert.alert('Background Location Warning', "Please go to app settings and change location access to 'Allow all the time' for full background protection.");
         }
-        
-        console.log('🔔 Notification permission:', finalStatus);
-        return finalStatus === 'granted';
-      } catch (apiError) {
-        console.log('⚠️ Notification API limited in Expo Go, returning true');
-        return true; // Bypass for Expo Go
-      }
-    } catch (error) {
-      console.error('❌ NOTIFICATION MODULE FAILED:', error);
-      return true; // Bypass for testing
-    }
-  }
-
-  async requestLocationPermission(): Promise<boolean> {
-    try {
-      console.log('📍 Attempting to load expo-location...');
-      const Location = await import('expo-location');
-      console.log('✅ expo-location loaded successfully');
-      
-      const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
-      let finalStatus = existingStatus;
-      
-      if (existingStatus !== 'granted') {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        finalStatus = status;
       }
       
-      console.log('📍 Location permission:', finalStatus);
-      return finalStatus === 'granted';
-    } catch (error) {
-      console.error('❌ LOCATION MODULE FAILED:', error);
-      return false;
-    }
-  }
-
-  async requestSMSPermission(): Promise<boolean> {
-    try {
-      console.log('📱 Attempting to load expo-sms...');
-      const SMS = await import('expo-sms');
-      console.log('✅ expo-sms loaded successfully');
+      // Step 3: Expo Foreground Check (for consistency)
+      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       
-      const isAvailable = await SMS.isAvailableAsync();
-      console.log('📱 SMS available:', isAvailable);
-      return isAvailable;
-    } catch (error) {
-      console.error('❌ SMS MODULE FAILED:', error);
-      return false;
+      if (foregroundStatus !== "granted") {
+        console.warn("❌ Expo foreground location permission not granted");
+        // We still consider it granted if the native part passed, but log warning
+      }
     }
+    
+    return grantedFine;
+    
+  } catch (error) {
+    console.error('❌ Error requesting location permissions:', error);
+    return false;
+  }
+};
+
+/**
+ * Handles the SMS sending permission request.
+ */
+export const requestSMSPermission = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') {
+    return true;
   }
 
-  // Check methods for settings screen
-  async checkNotificationPermission(): Promise<boolean> {
-    try {
-      const { Notifications } = await import('expo-notifications');
-      const { status } = await Notifications.getPermissionsAsync();
-      return status === 'granted';
-    } catch (error) {
-      console.log('⚠️ Cannot check notification permission in Expo Go');
-      return true; // Assume granted in Expo Go
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.SEND_SMS,
+      {
+        title: "Emergency SMS Permission",
+        message: "SafeHer needs permission to send emergency SMS alerts automatically.",
+        buttonPositive: "Allow",
+        buttonNegative: "Deny"
+      }
+    );
+    const result = granted === PermissionsAndroid.RESULTS.GRANTED;
+    if (!result) {
+        console.warn('❌ SMS permission denied.');
     }
+    return result;
+  } catch (error) {
+    console.error('Error requesting SMS permission:', error);
+    return false;
   }
+};
 
-  async checkLocationPermission(): Promise<boolean> {
-    try {
-      const Location = await import('expo-location');
-      const { status } = await Location.getForegroundPermissionsAsync();
-      return status === 'granted';
-    } catch (error) {
-      console.error('Failed to check location permission:', error);
-      return false;
+
+// =================================================================
+// 2. CHECK STATUS FUNCTIONS (Required by permissions.tsx)
+// =================================================================
+
+/**
+ * Checks the status of the most critical permissions.
+ */
+export const checkCriticalPermissions = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+        return true;
     }
-  }
 
-  async checkSMSPermission(): Promise<boolean> {
-    try {
-      const SMS = await import('expo-sms');
-      return await SMS.isAvailableAsync();
-    } catch (error) {
-      console.error('Failed to check SMS permission:', error);
-      return false;
+    const checks = await Promise.all([
+        PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.SEND_SMS),
+        PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION),
+    ]);
+
+    // Check Notifications separately
+    let notificationGranted = true;
+    if (Platform.Version >= 33) {
+        // Use getPermissionsAsync to check current status without prompting
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') {
+            notificationGranted = false;
+        }
     }
-  }
 
-  async checkAllPermissions(): Promise<{
-    notifications: boolean;
-    location: boolean;
-    sms: boolean;
-  }> {
-    return {
-      notifications: await this.checkNotificationPermission(),
-      location: await this.checkLocationPermission(),
-      sms: await this.checkSMSPermission(),
-    };
-  }
-}
+    return checks.every(status => status) && notificationGranted;
+};
 
-export const permissionsService = new PermissionsService();
+// =================================================================
+// 3. EXPORTS
+// =================================================================
+
+export const permissionsService = {
+    requestNotificationPermission,
+    requestLocationPermission,
+    requestSMSPermission,
+    checkCriticalPermissions,
+    // requestAllPermissions is now obsolete but left for completeness
+    // requestAllPermissions: () => requestAllPermissions, 
+};
+
+// NOTE: The original monolithic requestAllPermissions function is deleted/removed from export
+// as it is no longer the correct way to handle the flow requested by permissions.tsx
